@@ -2,6 +2,7 @@ from pathlib import Path
 
 import eu_startups_pipeline.pipeline as pipeline_module
 from eu_startups_pipeline.config import Paths, Settings
+from eu_startups_pipeline.db import Database
 from eu_startups_pipeline.models import PageFetchResult
 from eu_startups_pipeline.parsers import parse_search_results
 from eu_startups_pipeline.pipeline import PipelineRunner
@@ -143,3 +144,41 @@ def test_run_loop_requeues_transient_failure_instead_of_failing_permanently(
         assert "retrying after error" in row["last_error"]
     finally:
         runner.close()
+
+
+def test_next_task_prioritizes_enrichment_while_other_work_is_in_cooldown(tmp_path: Path):
+    db = Database(tmp_path / "pipeline.sqlite3")
+    try:
+        db.initialize()
+        db.enqueue_task(
+            "crawl_company_page",
+            company_url="https://www.eu-startups.com/directory/blocked/",
+            url="https://www.eu-startups.com/directory/blocked/",
+            domain="www.eu-startups.com",
+            unique_key="blocked",
+        )
+        first = db.next_task()
+        assert first is not None
+        db.postpone_task(first["id"], "2999-01-01T00:00:00+00:00", "Cloudflare challenge")
+
+        db.enqueue_task(
+            "crawl_company_page",
+            company_url="https://www.eu-startups.com/directory/another/",
+            url="https://www.eu-startups.com/directory/another/",
+            domain="www.eu-startups.com",
+            unique_key="another",
+        )
+        db.enqueue_task(
+            "enrich_company",
+            company_url="https://www.eu-startups.com/directory/passing/",
+            url="https://passing.example",
+            domain="passing.example",
+            unique_key="enrich",
+        )
+
+        next_ready = db.next_task()
+
+        assert next_ready is not None
+        assert next_ready["task_type"] == "enrich_company"
+    finally:
+        db.close()

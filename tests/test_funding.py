@@ -23,3 +23,15 @@ def test_funding_bucket_policy():
     policy = {"allowed_buckets": ["€1-5 million"], "excluded_buckets": ["No funding announced yet"]}
     assert funding_bucket_allowed("€1-5 million", policy) is True
     assert funding_bucket_allowed("No funding announced yet", policy) is False
+
+
+def test_normalize_known_bucket_variant_between_label():
+    info = normalize_funding_bucket(
+        "Between €500K-€ 1 million",
+        {"€500K-€1 million": {"min": 500_000, "max": 1_000_000}},
+    )
+    assert info.key == "€500K-€1 million"
+    assert info.display_value == "€500K-€1 million"
+    assert info.min_eur == 500_000
+    assert info.max_eur == 1_000_000
+    assert info.is_known_bucket is True

@@ -18,16 +18,32 @@ def _amount_to_eur(number: str, unit: str | None) -> float:
     return value
 
 
+def _canonicalize_bucket_label(value: str) -> str:
+    cleaned = normalize_space(value)
+    if not cleaned:
+        return ""
+    cleaned = re.sub(r"^\s*Between\s+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"€\s+", "€", cleaned)
+    cleaned = re.sub(r"\s*-\s*€\s*", "-€", cleaned)
+    cleaned = re.sub(r"\s*-\s*", "-", cleaned)
+    cleaned = re.sub(r"\bmillion\b", "million", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
 def normalize_funding_bucket(raw_value: str, bucket_ranges: dict[str, dict]) -> FundingInfo:
     cleaned = normalize_space(raw_value)
     if not cleaned:
         return FundingInfo("", "", "", None, None, False)
-    if cleaned in bucket_ranges:
-        rule = bucket_ranges[cleaned]
+    canonical_ranges = {
+        _canonicalize_bucket_label(bucket): (bucket, rule) for bucket, rule in bucket_ranges.items()
+    }
+    canonical_cleaned = _canonicalize_bucket_label(cleaned)
+    if canonical_cleaned in canonical_ranges:
+        canonical_key, rule = canonical_ranges[canonical_cleaned]
         return FundingInfo(
             raw_value=cleaned,
-            display_value=cleaned,
-            key=cleaned,
+            display_value=canonical_key,
+            key=canonical_key,
             min_eur=rule.get("min"),
             max_eur=rule.get("max"),
             is_known_bucket=True,

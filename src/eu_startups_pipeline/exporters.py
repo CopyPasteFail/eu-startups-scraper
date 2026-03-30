@@ -12,7 +12,9 @@ EXPORT_HEADERS = [
     "EU-link",
     "Company LinkedIn",
     "Person",
+    "Person LinkedIn",
     "Role",
+    "contacted?",
     "Total funding",
     "Funding stage",
 ]
@@ -32,7 +34,9 @@ def export_results(db: Database, output_dir: Path) -> int:
                     row.eu_link,
                     row.company_linkedin,
                     row.person,
+                    row.person_linkedin,
                     row.role,
+                    "",
                     row.total_funding,
                     row.funding_stage,
                 ]
@@ -48,7 +52,9 @@ def export_results(db: Database, output_dir: Path) -> int:
                 "EU-link",
                 "Company LinkedIn" if row.company_linkedin else "",
                 row.person,
+                "Person LinkedIn" if row.person and row.person_linkedin else "",
                 row.role,
+                "",
                 row.total_funding,
                 row.funding_stage,
             ]
@@ -64,8 +70,8 @@ def export_results(db: Database, output_dir: Path) -> int:
             sheet.cell(row=current, column=3).hyperlink = row.company_linkedin
             sheet.cell(row=current, column=3).style = "Hyperlink"
         if row.person and row.person_linkedin:
-            sheet.cell(row=current, column=4).hyperlink = row.person_linkedin
-            sheet.cell(row=current, column=4).style = "Hyperlink"
+            sheet.cell(row=current, column=5).hyperlink = row.person_linkedin
+            sheet.cell(row=current, column=5).style = "Hyperlink"
     workbook.save(xlsx_path)
     db.set_metadata("last_export_row_count", str(len(rows)))
     return len(rows)

@@ -222,16 +222,42 @@ class Database:
 
     def next_task(self) -> sqlite3.Row | None:
         now = utcnow()
-        row = self.conn.execute(
-            """
-            SELECT * FROM tasks
-            WHERE status IN ('pending', 'cooldown')
-              AND (not_before IS NULL OR not_before <= ?)
-            ORDER BY id
-            LIMIT 1
-            """,
-            (now,),
-        ).fetchone()
+        has_future_cooldown = bool(
+            self.conn.execute(
+                """
+                SELECT 1 FROM tasks
+                WHERE status = 'cooldown'
+                  AND not_before IS NOT NULL
+                  AND not_before > ?
+                LIMIT 1
+                """,
+                (now,),
+            ).fetchone()
+        )
+        if has_future_cooldown:
+            row = self.conn.execute(
+                """
+                SELECT * FROM tasks
+                WHERE status IN ('pending', 'cooldown')
+                  AND (not_before IS NULL OR not_before <= ?)
+                ORDER BY
+                  CASE WHEN task_type = 'enrich_company' THEN 0 ELSE 1 END,
+                  id
+                LIMIT 1
+                """,
+                (now,),
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                """
+                SELECT * FROM tasks
+                WHERE status IN ('pending', 'cooldown')
+                  AND (not_before IS NULL OR not_before <= ?)
+                ORDER BY id
+                LIMIT 1
+                """,
+                (now,),
+            ).fetchone()
         if not row:
             return None
         self.conn.execute(

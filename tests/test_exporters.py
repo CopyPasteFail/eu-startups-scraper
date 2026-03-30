@@ -48,6 +48,14 @@ def test_export_results(tmp_path: Path):
         assert count == 1
         assert (tmp_path / "results_clean.csv").exists()
         assert (tmp_path / "results_clean.xlsx").exists()
+        csv_text = (tmp_path / "results_clean.csv").read_text(encoding="utf-8")
+        assert "Person LinkedIn" in csv_text
+        assert "contacted?" in csv_text
+        assert "https://www.linkedin.com/in/jane-doe" in csv_text
+        assert (
+            "Company,EU-link,Company LinkedIn,Person,Person LinkedIn,Role,contacted?,Total funding,Funding stage"
+            in csv_text
+        )
     finally:
         db.close()
 
@@ -86,6 +94,9 @@ def test_export_results_keeps_fallback_row_and_people_tab_link(tmp_path: Path):
             sheet = workbook["results_clean"]
             assert sheet["C2"].hyperlink.target == "https://www.linkedin.com/company/acme-ai/people"
             assert sheet["D2"].value in ("", None)
+            assert sheet["E2"].value in ("", None)
+            assert sheet["F2"].value in ("", None)
+            assert sheet["G2"].value in ("", None)
         finally:
             workbook.close()
     finally:

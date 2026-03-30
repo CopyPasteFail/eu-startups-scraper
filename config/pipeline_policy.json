@@ -1,0 +1,59 @@
+{
+  "funding_policy": {
+    "allowed_buckets": [
+      "Under €500K",
+      "€500K-€1 million",
+      "€1-5 million"
+    ],
+    "excluded_buckets": [],
+    "bucket_ranges_eur": {
+      "No funding announced yet": { "min": 0, "max": 0 },
+      "Under €500K": { "min": 0, "max": 500000 },
+      "€500K-€1 million": { "min": 500000, "max": 1000000 },
+      "€1-5 million": { "min": 1000000, "max": 5000000 },
+      "€5-10 million": { "min": 5000000, "max": 10000000 },
+      "€10-25 million": { "min": 10000000, "max": 25000000 },
+      "€25-50 million": { "min": 25000000, "max": 50000000 },
+      "€50-100 million": { "min": 50000000, "max": 100000000 },
+      "More than €100 million": { "min": 100000000, "max": null }
+    }
+  },
+  "target_roles": {
+    "CEO": [
+      "ceo",
+      "chief executive officer",
+      "co-ceo"
+    ],
+    "CTO": [
+      "cto",
+      "chief technology officer",
+      "technical co-founder"
+    ],
+    "VP R&D": [
+      "vp r&d",
+      "vice president research",
+      "vice president of research and development",
+      "vp research"
+    ],
+    "Head of Engineering": [
+      "head of engineering",
+      "vp engineering",
+      "director of engineering",
+      "engineering lead"
+    ],
+    "Founder": [
+      "founder",
+      "co-founder",
+      "cofounder"
+    ]
+  },
+  "website_probe_paths": [
+    "/",
+    "/about",
+    "/about-us",
+    "/team",
+    "/company",
+    "/contact",
+    "/imprint"
+  ]
+}

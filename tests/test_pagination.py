@@ -14,6 +14,7 @@ def _settings(tmp_path: Path) -> Settings:
         max_delay_seconds=0,
         request_timeout_seconds=5,
         max_retries=2,
+        disable_funding_filter=False,
         refresh_search_pages=False,
         refresh_company_pages=False,
         refresh_website_pages=False,

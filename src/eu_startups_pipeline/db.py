@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import (
+    CodexReviewTarget,
     CompanyRecord,
     ExportRow,
     PersonCandidate,
@@ -12,8 +13,17 @@ from .models import (
     SearchListing,
     SearchPageParseResult,
 )
-from .utils import dump_json, people_tab_url, stable_hash, utcnow
-from .utils import linkedin_company_url as normalize_linkedin_company_url
+from .utils import (
+    dump_json,
+    linkedin_person_url,
+    load_json,
+    people_tab_url,
+    stable_hash,
+    utcnow,
+)
+from .utils import (
+    linkedin_company_url as normalize_linkedin_company_url,
+)
 
 
 class Database:
@@ -534,19 +544,73 @@ class Database:
             )
         )
 
+    def close_review_items(self, review_type: str, company_url: str) -> None:
+        self.conn.execute(
+            """
+            UPDATE review_items
+            SET status = 'closed', updated_at = ?
+            WHERE review_type = ? AND company_url = ? AND status = 'open'
+            """,
+            (utcnow(), review_type, company_url),
+        )
+        self.conn.commit()
+
+    def next_codex_review_target(self) -> CodexReviewTarget | None:
+        row = self.conn.execute(
+            """
+            SELECT
+              r.review_id,
+              r.review_type,
+              r.company_name,
+              r.company_url,
+              r.subject,
+              r.proposed_value,
+              r.candidate_values_json,
+              r.context_json,
+              c.website_url,
+              c.total_funding_display,
+              c.total_funding_raw,
+              c.funding_stage,
+              e.linkedin_company_url
+            FROM review_items r
+            LEFT JOIN companies c ON c.company_url = r.company_url
+            LEFT JOIN company_enrichment e ON e.company_url = r.company_url
+            WHERE r.status = 'open'
+            ORDER BY r.created_at, r.review_id
+            LIMIT 1
+            """
+        ).fetchone()
+        if not row:
+            return None
+        return CodexReviewTarget(
+            review_id=row["review_id"],
+            review_type=row["review_type"],
+            company_name=row["company_name"],
+            company_url=row["company_url"],
+            website_url=row["website_url"] or "",
+            company_linkedin=row["linkedin_company_url"] or "",
+            total_funding=row["total_funding_display"] or row["total_funding_raw"] or "",
+            funding_stage=row["funding_stage"] or "",
+            subject=row["subject"],
+            proposed_value=row["proposed_value"] or "",
+            candidate_values=load_json(row["candidate_values_json"], []),
+            context=load_json(row["context_json"], {}),
+        )
+
     def apply_review_resolution(self, review_id: str, action: str, value: str, notes: str) -> None:
         row = self.conn.execute(
             "SELECT * FROM review_items WHERE review_id = ?", (review_id,)
         ).fetchone()
         if not row:
             return
+        now = utcnow()
         self.conn.execute(
             """
             UPDATE review_items
             SET status = 'applied', resolution_action = ?, resolution_value = ?, resolution_notes = ?, updated_at = ?
             WHERE review_id = ?
             """,
-            (action, value, notes, utcnow(), review_id),
+            (action, value, notes, now, review_id),
         )
         if row["review_type"] == "linkedin_company":
             current = self.conn.execute(
@@ -573,6 +637,54 @@ class Database:
                 """,
                 (1 if include else 0, row["company_url"], row["subject"], row["proposed_value"]),
             )
+        elif row["review_type"] == "company_people_research":
+            if action == "add_person":
+                person_name, role_raw, linkedin_url = self._parse_manual_person_resolution(value)
+                role_normalized = role_raw
+                self.conn.execute(
+                    """
+                    INSERT INTO people(
+                      person_key, company_url, person_name, person_linkedin_url, role_raw, role_normalized,
+                      source, source_url, confidence, needs_review, include_in_output, evidence
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
+                    ON CONFLICT(person_key) DO UPDATE SET
+                      person_name = excluded.person_name,
+                      person_linkedin_url = excluded.person_linkedin_url,
+                      role_raw = excluded.role_raw,
+                      role_normalized = excluded.role_normalized,
+                      source = excluded.source,
+                      source_url = excluded.source_url,
+                      confidence = excluded.confidence,
+                      include_in_output = excluded.include_in_output,
+                      evidence = excluded.evidence
+                    """,
+                    (
+                        stable_hash(row["company_url"], person_name, linkedin_url, role_raw),
+                        row["company_url"],
+                        person_name,
+                        linkedin_person_url(linkedin_url),
+                        role_raw,
+                        role_normalized,
+                        "codex_review",
+                        row["company_url"],
+                        0.95,
+                        notes or value,
+                    ),
+                )
+                self.conn.execute(
+                    """
+                    UPDATE review_items
+                    SET status = 'open', resolution_action = ?, resolution_value = ?, resolution_notes = ?, updated_at = ?
+                    WHERE review_id = ?
+                    """,
+                    (action, value, notes, now, review_id),
+                )
+            elif action in {"done", "no_match"}:
+                pass
+            else:
+                raise ValueError(
+                    f"Unsupported action `{action}` for review type `{row['review_type']}`"
+                )
         self.conn.commit()
 
     def status_counts(self) -> dict[str, int]:
@@ -660,3 +772,19 @@ class Database:
 
     def _scalar(self, query: str, params: tuple[Any, ...] = ()) -> int:
         return int(self.conn.execute(query, params).fetchone()[0])
+
+    @staticmethod
+    def _parse_manual_person_resolution(value: str) -> tuple[str, str, str]:
+        parts = [part.strip() for part in value.split("|")]
+        if len(parts) < 2:
+            raise ValueError(
+                "add_person resolution_value must be `Name | Role` or `Name | Role | LinkedIn URL`"
+            )
+        person_name = parts[0]
+        role_raw = parts[1]
+        linkedin_url = parts[2] if len(parts) > 2 else ""
+        if not person_name or not role_raw:
+            raise ValueError(
+                "add_person resolution_value must include both a person name and a role"
+            )
+        return person_name, role_raw, linkedin_url

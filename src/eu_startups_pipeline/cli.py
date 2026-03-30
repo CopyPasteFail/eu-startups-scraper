@@ -6,6 +6,7 @@ from pathlib import Path
 from .config import load_settings
 from .git_hooks import install_repo_git_hooks
 from .logging_utils import configure_logging
+from .orchestrator import format_codex_review_target, next_codex_action
 from .pipeline import PipelineRunner, format_status_report
 from .review import apply_review_resolutions
 
@@ -34,7 +35,51 @@ def build_parser() -> argparse.ArgumentParser:
         "export", help="Regenerate clean outputs and review files from persisted state."
     )
     subparsers.add_parser("apply-review", help="Apply review resolutions and regenerate exports.")
+
+    chat_start_parser = subparsers.add_parser(
+        "chat-start",
+        help="Start a chat-first crawl run and report the next Codex action.",
+    )
+    chat_start_parser.add_argument(
+        "--reset-state", action="store_true", help="Clear persisted pipeline state first."
+    )
+    chat_start_parser.add_argument(
+        "--max-tasks", type=int, default=None, help="Process at most N tasks."
+    )
+
+    chat_resume_parser = subparsers.add_parser(
+        "chat-resume",
+        help="Resume a chat-first crawl run and report the next Codex action.",
+    )
+    chat_resume_parser.add_argument(
+        "--max-tasks", type=int, default=None, help="Process at most N tasks."
+    )
+    subparsers.add_parser(
+        "chat-status", help="Show progress counts plus the next Codex investigation target."
+    )
+    subparsers.add_parser(
+        "chat-review-next",
+        help="Show the next open company or ambiguity target for Codex investigation.",
+    )
+    subparsers.add_parser(
+        "chat-apply",
+        help="Apply review resolutions and report the next Codex action.",
+    )
+    subparsers.add_parser(
+        "chat-export",
+        help="Regenerate exports and report the next Codex action.",
+    )
     return parser
+
+
+def _print_chat_guidance(runner: PipelineRunner, output_dir: Path) -> None:
+    counts = runner.status_counts()
+    print(format_status_report(counts, output_dir))
+    print(next_codex_action(runner.db, counts))
+
+
+def _print_chat_review_target(runner: PipelineRunner) -> None:
+    print(format_codex_review_target(runner.db.next_codex_review_target()))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -76,6 +121,37 @@ def main(argv: list[str] | None = None) -> int:
             count = runner.regenerate_exports()
             print(f"Applied {applied} review resolutions.")
             print(f"Regenerated exports with {count} rows in {settings.paths.output_dir}")
+            return 0
+        if args.command == "chat-start":
+            runner.start_new_run(reset_state=args.reset_state)
+            processed = runner.resume(max_tasks=args.max_tasks)
+            print(f"Processed {processed} tasks.")
+            _print_chat_guidance(runner, settings.paths.output_dir)
+            return 0
+        if args.command == "chat-resume":
+            processed = runner.resume(max_tasks=args.max_tasks)
+            print(f"Processed {processed} tasks.")
+            _print_chat_guidance(runner, settings.paths.output_dir)
+            return 0
+        if args.command == "chat-status":
+            _print_chat_guidance(runner, settings.paths.output_dir)
+            return 0
+        if args.command == "chat-review-next":
+            _print_chat_review_target(runner)
+            return 0
+        if args.command == "chat-apply":
+            applied = apply_review_resolutions(
+                runner.db, settings.paths.output_dir / "review_resolutions.csv"
+            )
+            count = runner.regenerate_exports()
+            print(f"Applied {applied} review resolutions.")
+            print(f"Regenerated exports with {count} rows in {settings.paths.output_dir}")
+            _print_chat_guidance(runner, settings.paths.output_dir)
+            return 0
+        if args.command == "chat-export":
+            count = runner.regenerate_exports()
+            print(f"Regenerated exports with {count} rows in {settings.paths.output_dir}")
+            _print_chat_guidance(runner, settings.paths.output_dir)
             return 0
         parser.error(f"Unknown command: {args.command}")
         return 2

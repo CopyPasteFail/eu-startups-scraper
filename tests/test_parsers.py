@@ -1,4 +1,8 @@
-from eu_startups_pipeline.parsers import parse_company_page, parse_search_results
+from eu_startups_pipeline.parsers import (
+    looks_like_valid_company_page,
+    parse_company_page,
+    parse_search_results,
+)
 
 SEARCH_HTML = """
 <html>
@@ -34,6 +38,26 @@ COMPANY_HTML = """
       <span class="field-label">Long Business Description:</span> Applied AI for logistics.
     </div>
     <a href="https://www.linkedin.com/company/acme-ai/about/">linkedin</a>
+  </body>
+</html>
+"""
+
+
+COMPANY_HTML_WITH_COOKIE_MODAL = """
+<html>
+  <body>
+    <div id="cookie-modal">
+      <h1>Customize your cookie preferences</h1>
+    </div>
+    <div class="wpbdp-single">
+      <div class="listing-title">Acme AI</div>
+      <div class="wpbdp-field-display">
+        <span class="field-label">Website:</span> https://acme.example
+      </div>
+      <div class="wpbdp-field-display">
+        <span class="field-label">Total Funding:</span> €1-5 million
+      </div>
+    </div>
   </body>
 </html>
 """
@@ -89,3 +113,30 @@ def test_parse_company_page():
     assert record.eu_linkedin_url == "https://www.linkedin.com/company/acme-ai/about/"
     assert record.funding_min_eur == 1_000_000
     assert record.description == "Applied AI for logistics."
+
+
+def test_parse_company_page_prefers_listing_title_over_cookie_modal():
+    record = parse_company_page(
+        COMPANY_HTML_WITH_COOKIE_MODAL,
+        "https://www.eu-startups.com/directory/acme-ai/",
+        {"bucket_ranges_eur": {"€1-5 million": {"min": 1_000_000, "max": 5_000_000}}},
+    )
+    assert record.company_name == "Acme AI"
+
+
+def test_looks_like_valid_company_page_accepts_listing_with_fields():
+    assert looks_like_valid_company_page(COMPANY_HTML_WITH_COOKIE_MODAL) is True
+
+
+def test_looks_like_valid_company_page_rejects_cookie_only_modal():
+    html = """
+    <html>
+      <body>
+        <div id="cookie-modal">
+          <h1>Customize your cookie preferences</h1>
+          <button>Accept all cookies</button>
+        </div>
+      </body>
+    </html>
+    """
+    assert looks_like_valid_company_page(html) is False

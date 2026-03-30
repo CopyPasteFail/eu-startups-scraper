@@ -114,3 +114,19 @@ class ExportRow:
     role: str
     total_funding: str
     funding_stage: str
+
+
+@dataclass(slots=True)
+class CodexReviewTarget:
+    review_id: str
+    review_type: str
+    company_name: str
+    company_url: str
+    website_url: str
+    company_linkedin: str
+    total_funding: str
+    funding_stage: str
+    subject: str
+    proposed_value: str
+    candidate_values: list[str] = field(default_factory=list)
+    context: dict[str, str] = field(default_factory=dict)

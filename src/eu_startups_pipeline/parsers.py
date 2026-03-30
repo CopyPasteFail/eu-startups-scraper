@@ -76,7 +76,12 @@ def parse_search_results(html: str, page_url: str) -> SearchPageParseResult:
 
 def parse_company_page(html: str, company_url: str, funding_policy: dict) -> CompanyRecord:
     soup = BeautifulSoup(html, "html.parser")
-    title = soup.select_one("h1.entry-title, h1")
+    title = (
+        soup.select_one(".wpbdp-single .listing-title")
+        or soup.select_one(".wpbdp-listing-single .listing-title")
+        or soup.select_one("h1.entry-title")
+        or soup.select_one("h1")
+    )
     company_name = normalize_space(title.get_text(" ", strip=True)) if title else ""
     pairs = _extract_label_value_pairs(soup)
     linkedin_link = soup.select_one("a[href*='linkedin.com/company/']")
@@ -104,6 +109,25 @@ def parse_company_page(html: str, company_url: str, funding_policy: dict) -> Com
         funding_unknown=not funding.is_known_bucket,
         funding_stage="",
     )
+
+
+def looks_like_valid_company_page(html: str) -> bool:
+    soup = BeautifulSoup(html, "html.parser")
+    title = (
+        soup.select_one(".wpbdp-single .listing-title")
+        or soup.select_one(".wpbdp-listing-single .listing-title")
+        or soup.select_one("h1.entry-title")
+    )
+    field_labels = [
+        normalize_space(field.get_text(" ", strip=True)).rstrip(":")
+        for field in soup.select(".wpbdp-field-display .field-label")
+    ]
+    if not title:
+        return False
+    if "cookie preferences" in normalize_space(title.get_text(" ", strip=True)).lower():
+        return False
+    required_markers = {"Website", "Total Funding", "Category", "Based in"}
+    return len(set(field_labels) & required_markers) >= 2
 
 
 def _extract_inline_value(text: str, label: str) -> str:

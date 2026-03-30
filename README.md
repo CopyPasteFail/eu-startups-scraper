@@ -20,6 +20,35 @@ Codex app is the default ambiguity solver and review orchestrator for this repo.
 6. Start a fresh crawl:
    `python -m eu_startups_pipeline run --reset-state`
 
+For a smoke run that exercises downstream enrichment/export without being limited by the funding policy, set `DISABLE_FUNDING_FILTER=1` in the environment for that run only.
+
+## Chat-first workflow
+
+This repo now supports a Codex-chat-first orchestration pattern similar to `linkedin-post-pipeline`.
+
+Use these commands when you want Codex to drive the run from durable repo state:
+
+- `python -m eu_startups_pipeline chat-start --reset-state`
+- `python -m eu_startups_pipeline chat-resume`
+- `python -m eu_startups_pipeline chat-status`
+- `python -m eu_startups_pipeline chat-review-next`
+- `python -m eu_startups_pipeline chat-apply`
+- `python -m eu_startups_pipeline chat-export`
+
+What they do:
+
+- `chat-start` and `chat-resume` run the deterministic queue and then print the next Codex action.
+- `chat-status` shows progress plus the next Codex action.
+- `chat-review-next` prints the next open company/ambiguity target with enough context for Codex to investigate it immediately.
+- `chat-apply` merges `review_resolutions.csv`, regenerates exports, and then prints the next Codex action.
+- `chat-export` regenerates outputs and then prints the next Codex action.
+
+Automatic trigger behavior:
+
+- when a company passes the funding filter, deterministic enrichment runs first
+- if deterministic enrichment still cannot produce the needed people, the repo now creates a `company_people_research` review target automatically
+- Codex can then pick that target up with `chat-review-next` without waiting for a fresh user prompt for that specific company
+
 ## Default ambiguity workflow
 
 This is the primary supported workflow.
@@ -47,6 +76,24 @@ This is the primary supported workflow.
 - `python -m eu_startups_pipeline status`
 - `python -m eu_startups_pipeline export`
 - `python -m eu_startups_pipeline apply-review`
+- `python -m eu_startups_pipeline chat-start`
+- `python -m eu_startups_pipeline chat-resume`
+- `python -m eu_startups_pipeline chat-status`
+- `python -m eu_startups_pipeline chat-review-next`
+- `python -m eu_startups_pipeline chat-apply`
+- `python -m eu_startups_pipeline chat-export`
+
+## Smoke runs
+
+For a smoke run where any parsed company is allowed through the funding gate, use:
+
+`$env:DISABLE_FUNDING_FILTER='1'; python -m eu_startups_pipeline run --reset-state`
+
+or resume an existing smoke run with:
+
+`$env:DISABLE_FUNDING_FILTER='1'; python -m eu_startups_pipeline resume`
+
+This leaves the tracked funding policy unchanged and only disables the runtime gate for that specific run.
 
 ## Pre-push checks
 
@@ -120,3 +167,19 @@ These are kept out of the default `pre-push` hook because they are slower and mo
    `python -m eu_startups_pipeline apply-review`
 5. Regenerate clean outputs if needed:
    `python -m eu_startups_pipeline export`
+
+### Review resolution format for manual people research
+
+When `chat-review-next` or the review queue points to a `company_people_research` item, Codex can add people directly through `review_resolutions.csv`.
+
+Use one or more rows with:
+
+- `resolution_action=add_person`
+- `resolution_value=Name | Role | LinkedIn URL`
+
+Then close the company-level review item with one final row using either:
+
+- `resolution_action=done`
+- `resolution_action=no_match`
+
+This lets Codex investigate a company after deterministic enrichment, add one or more people, and then mark the investigation finished without any runtime OpenAI API usage.

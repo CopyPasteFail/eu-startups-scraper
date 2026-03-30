@@ -117,6 +117,8 @@ class Fetcher:
                 wait_until="domcontentloaded",
                 timeout=self.settings.request_timeout_seconds * 1000,
             )
+            self._dismiss_cookie_banner(page, url)
+            self._dismiss_newsletter_modal(page, url)
             self._wait_for_target_dom(page, url)
             status_code = response.status if response else 0
             if status_code == 429:
@@ -198,6 +200,8 @@ class Fetcher:
             deadline_ms = max(60_000, self.settings.request_timeout_seconds * 1000)
             elapsed = 0
             while elapsed < deadline_ms:
+                self._dismiss_cookie_banner(page, url)
+                self._dismiss_newsletter_modal(page, url)
                 try:
                     page.wait_for_selector(selector, timeout=5_000)
                     return
@@ -212,3 +216,44 @@ class Fetcher:
     def _looks_like_cloudflare_challenge(content: str) -> bool:
         lowered = content.lower()
         return "performing security verification" in lowered or "<title>just a moment..." in lowered
+
+    def _dismiss_cookie_banner(self, page, url: str) -> None:
+        try:
+            candidates = [
+                page.get_by_role("button", name="Reject non-essential"),
+                page.locator("button:has-text('Reject non-essential')"),
+                page.get_by_role("button", name="Accept all cookies"),
+                page.get_by_role("button", name="Accept all"),
+                page.get_by_role("button", name="Accept"),
+                page.locator("button:has-text('Accept all cookies')"),
+                page.locator("button:has-text('Accept all')"),
+                page.locator("button:has-text('Accept')"),
+            ]
+            for candidate in candidates:
+                if candidate.count() and candidate.first.is_visible():
+                    LOGGER.info("accepting cookie banner for %s", url)
+                    candidate.first.click(timeout=2_000)
+                    page.wait_for_timeout(750)
+                    return
+        except Exception as exc:
+            LOGGER.debug("cookie banner handling skipped for %s: %s", url, exc)
+
+    def _dismiss_newsletter_modal(self, page, url: str) -> None:
+        try:
+            candidates = [
+                page.get_by_role("button", name="No, Thanks"),
+                page.get_by_role("link", name="No, Thanks"),
+                page.locator("button:has-text('No, Thanks')"),
+                page.locator("a:has-text('No, Thanks')"),
+                page.locator("text='No, Thanks'"),
+                page.locator("[aria-label='Close']"),
+                page.locator("button[aria-label='Close']"),
+            ]
+            for candidate in candidates:
+                if candidate.count() and candidate.first.is_visible():
+                    LOGGER.info("dismissing newsletter modal for %s", url)
+                    candidate.first.click(timeout=2_000)
+                    page.wait_for_timeout(750)
+                    return
+        except Exception as exc:
+            LOGGER.debug("newsletter modal handling skipped for %s: %s", url, exc)

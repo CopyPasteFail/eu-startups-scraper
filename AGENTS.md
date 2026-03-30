@@ -18,6 +18,12 @@ Primary commands:
 - `status`: print crawl/enrichment/export counts.
 - `export`: regenerate `results_clean.csv`, `results_clean.xlsx`, `review_queue.csv`, `review_queue.xlsx`, and `review_resolutions.csv` from persisted state.
 - `apply-review`: read `review_resolutions.csv`, apply Codex-assisted human decisions, and regenerate exports.
+- `chat-start`: start a chat-first run and then print the next Codex action.
+- `chat-resume`: resume a chat-first run and then print the next Codex action.
+- `chat-status`: show progress plus the next Codex action.
+- `chat-review-next`: print the next open company/ambiguity target for Codex investigation.
+- `chat-apply`: apply review resolutions, regenerate exports, and print the next Codex action.
+- `chat-export`: regenerate exports and print the next Codex action.
 
 `init` is also responsible for repo setup tasks. It should install the repo-managed Git `pre-push` hook by setting `core.hooksPath` to `.githooks`.
 The default pre-push hook should run `ruff`, `pyright`, and a fast compile check. Heavier checks belong in GitHub Actions.
@@ -36,6 +42,19 @@ The default workflow is:
 8. `python -m eu_startups_pipeline export`
 
 `review_resolutions.csv` is the merge point back into the deterministic pipeline.
+
+For a more hands-off Codex-first session, prefer:
+
+1. `python -m eu_startups_pipeline chat-start --reset-state`
+2. `python -m eu_startups_pipeline chat-resume`
+3. `python -m eu_startups_pipeline chat-status`
+4. `python -m eu_startups_pipeline chat-review-next`
+5. have Codex investigate the surfaced company or ambiguity target
+6. have Codex write `runtime/exports/review_resolutions.csv`
+7. `python -m eu_startups_pipeline chat-apply`
+8. `python -m eu_startups_pipeline chat-export`
+
+Codex should treat `chat-review-next` as the repo-controlled trigger for the next investigation target instead of waiting for the user to name a company manually.
 
 ## Resume semantics
 
@@ -57,6 +76,29 @@ For this repo, a run is "finished" when:
 - clean exports were regenerated from persisted state
 
 The overall project is "finished" only when the queue is empty and the human review queue is either empty or intentionally deferred.
+
+## Codex investigation trigger
+
+When a company passes the funding filter:
+
+- deterministic enrichment must run first
+- if deterministic enrichment still cannot produce the needed people, the repo should create a `company_people_research` review item automatically
+- Codex can then pick that item up with `chat-review-next` and investigate without waiting for a new user prompt naming the company
+
+This keeps the runtime deterministic while allowing Codex app to operate as the external orchestrator for the unresolved cases.
+
+For `company_people_research` items, `review_resolutions.csv` should use:
+
+- `resolution_action=add_person`
+- `resolution_value=Name | Role | LinkedIn URL`
+
+Codex may write multiple `add_person` rows for the same `review_id`, then finish with:
+
+- `resolution_action=done`
+
+or:
+
+- `resolution_action=no_match`
 
 ## Runtime LLM mode
 

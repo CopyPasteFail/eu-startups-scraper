@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +26,7 @@ class Settings:
     max_delay_seconds: float
     request_timeout_seconds: int
     max_retries: int
+    disable_funding_filter: bool
     refresh_search_pages: bool
     refresh_company_pages: bool
     refresh_website_pages: bool
@@ -50,7 +52,10 @@ def _bool(value: str | None, default: bool = False) -> bool:
 def load_settings(root: Path | None = None) -> Settings:
     root = (root or Path.cwd()).resolve()
     env_path = root / ".env"
-    env = dotenv_values(env_path) if env_path.exists() else dotenv_values(root / ".env.example")
+    file_env = (
+        dotenv_values(env_path) if env_path.exists() else dotenv_values(root / ".env.example")
+    )
+    env = {**file_env, **os.environ}
     policy_path = root / str(env.get("PIPELINE_POLICY_PATH", "config/pipeline_policy.json"))
     policy = json.loads(policy_path.read_text(encoding="utf-8"))
     paths = Paths(
@@ -68,6 +73,7 @@ def load_settings(root: Path | None = None) -> Settings:
         max_delay_seconds=float(env.get("MAX_DELAY_SECONDS", 8.0)),
         request_timeout_seconds=int(env.get("REQUEST_TIMEOUT_SECONDS", 45)),
         max_retries=int(env.get("MAX_RETRIES", 2)),
+        disable_funding_filter=_bool(env.get("DISABLE_FUNDING_FILTER")),
         refresh_search_pages=_bool(env.get("REFRESH_SEARCH_PAGES")),
         refresh_company_pages=_bool(env.get("REFRESH_COMPANY_PAGES")),
         refresh_website_pages=_bool(env.get("REFRESH_WEBSITE_PAGES")),

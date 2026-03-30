@@ -11,8 +11,8 @@ from .enrichment import discover_company_linkedin, discover_people
 from .exporters import export_results
 from .fetching import ChallengeBlockedError, CooldownError, Fetcher
 from .funding import funding_bucket_allowed
-from .parsers import parse_company_page, parse_search_results
-from .review import export_review_files
+from .parsers import looks_like_valid_company_page, parse_company_page, parse_search_results
+from .review import export_review_files, make_review_item
 from .utils import load_json, normalize_domain
 
 LOGGER = logging.getLogger(__name__)
@@ -162,14 +162,21 @@ class PipelineRunner:
             refresh=self.settings.refresh_company_pages,
             prefer_browser=True,
         )
+        if not looks_like_valid_company_page(fetched.content):
+            raise ChallengeBlockedError(
+                normalize_domain(fetched.final_url or company_url),
+                120,
+                f"Company page content not ready for {company_url}",
+            )
         record = parse_company_page(
             fetched.content, fetched.final_url, self.settings.funding_policy
         )
         existing = self.db.get_company(company_url)
         record.search_page_url = existing["search_page_url"] if existing else ""
         record.html_path = fetched.body_path
-        record.passes_funding_filter = funding_bucket_allowed(
-            record.funding_bucket_key, self.settings.funding_policy
+        record.passes_funding_filter = (
+            self.settings.disable_funding_filter
+            or funding_bucket_allowed(record.funding_bucket_key, self.settings.funding_policy)
         )
         self.db.upsert_company(record)
         if record.passes_funding_filter:
@@ -213,6 +220,29 @@ class PipelineRunner:
             notes="",
         )
         self.db.replace_people(company_url, people)
+        included_people = [person for person in people if person.include_in_output]
+        if included_people:
+            self.db.close_review_items("company_people_research", company_url)
+        else:
+            self.db.upsert_review_item(
+                make_review_item(
+                    review_type="company_people_research",
+                    company_url=company_url,
+                    company_name=company["company_name"],
+                    subject=company["company_name"],
+                    proposed_value="",
+                    candidate_values=[],
+                    context={
+                        "website_url": company["website_url"] or "",
+                        "linkedin_company_url": linkedin_url,
+                        "total_funding": company["total_funding_display"]
+                        or company["total_funding_raw"]
+                        or "",
+                        "funding_stage": company["funding_stage"] or "",
+                        "next_step": "Investigate likely founders or engineering leaders and add them via review_resolutions.csv",
+                    },
+                )
+            )
 
 
 def format_status_report(counts: dict[str, int], output_dir: Path) -> str:
